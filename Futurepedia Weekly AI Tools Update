@@ -1,0 +1,52 @@
+name: Futurepedia Weekly AI Tools Update
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'
+
+jobs:
+  update-ai-tools:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start Browse AI Task
+        run: |
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.BROWSE_AI_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{}" \
+            "https://api.browse.ai/v2/tasks/[TASK_ID]/run"
+      - name: Wait 30 seconds
+        run: sleep 30
+      - name: Get Browse AI Data
+        id: get-data
+        run: |
+          response=$(curl -X GET \
+            -H "Authorization: Bearer ${{ secrets.BROWSE_AI_TOKEN }}" \
+            "https://api.browse.ai/v2/tasks/[Extract AI tools from Futurepedia categories]/latest-output")
+          echo "::set-output name=results::$response"
+      - name: Format Data
+        id: format-data
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const results = JSON.parse('${{ steps.get-data.outputs.results }}');
+            const tools = results.results.map(item => ({
+              name: item.name,
+              description: item.description,
+              advantages: item.advantages,
+              link: item.link
+            }));
+            const json = JSON.stringify(tools, null, 2);
+            core.setOutput('json', json);
+      - name: Upload to GitHub
+        run: |
+          content=$(echo '${{ steps.format-data.outputs.json }}' | base64)
+          curl -X PUT \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"message\": \"update futurepedia_tools.json\",
+              \"content\": \"$content\",
+              \"sha\": \"[GITHUB_FILE_SHA]\"
+            }" \
+            "https://api.github.com/repos/yilan722/ai-tool-updates/contents/futurepedia_tools.json"
